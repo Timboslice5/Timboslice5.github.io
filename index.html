@@ -155,15 +155,138 @@
 
       if (selectedPiece) {
         if (movePiece(row, col)) {
+          console.log(`Moved ${selectedPiece} to (${row}, ${col}). Switching turns.`);
           currentPlayer = currentPlayer === "white" ? "black" : "white";
           createBoard();
-          statusElement.textContent = `${currentPlayer.charAt(0).toUpperCase() + currentPlayer.slice(1)}'s turn.`;
+          // Bishops
+
+// Movement Logic
+function getBishopMoves(row, col) {
+  return getLinearMoves(row, col, [[1, 1], [1, -1], [-1, 1], [-1, -1]]);
+}
+
+// Capturing Logic
+// Bishops use the same linear movement logic for capturing. If a piece is encountered along the diagonal path, it can capture if it's an opponent's piece.
+
+
+// Rooks
+
+// Movement Logic
+function getRookMoves(row, col) {
+  return getLinearMoves(row, col, [[1, 0], [-1, 0], [0, 1], [0, -1]]);
+}
+
+// Capturing Logic
+// Rooks move in straight lines horizontally and vertically. They can capture opponent pieces encountered in their path.
+
+
+// Pawns
+
+// Movement Logic
+function getPawnMoves(row, col, isWhite) {
+  const moves = [];
+  const direction = isWhite ? -1 : 1;
+  const startRow = isWhite ? 6 : 1;
+
+  if (board[row + direction]?.[col] === "") moves.push({ row: row + direction, col });
+  if (row === startRow && board[row + 2 * direction]?.[col] === "" && board[row + direction]?.[col] === "") {
+    moves.push({ row: row + 2 * direction, col });
+  }
+
+  return moves;
+}
+
+// Capturing Logic
+function getPawnCaptures(row, col, isWhite) {
+  const captures = [];
+  const direction = isWhite ? -1 : 1;
+  [-1, 1].forEach((offset) => {
+    const target = board[row + direction]?.[col + offset];
+    if (target && ((isWhite && target === target.toLowerCase()) || (!isWhite && target === target.toUpperCase()))) {
+      captures.push({ row: row + direction, col: col + offset, type: "capture" });
+    }
+  });
+  return captures;
+}
+
+
+// Queens
+
+// Movement Logic
+function getQueenMoves(row, col) {
+  return getLinearMoves(row, col, [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]);
+}
+
+// Capturing Logic
+// Queens combine rook and bishop movement and capturing logic. They capture any opponent piece encountered along their movement paths.
+
+
+// Kings
+
+// Movement Logic
+function getKingMoves(row, col) {
+  const moves = [];
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dy = -1; dy <= 1; dy++) {
+      if (dx === 0 && dy === 0) continue;
+      const r = row + dx;
+      const c = col + dy;
+      if (r >= 0 && r < 8 && c >= 0 && c < 8) {
+        const targetPiece = board[r][c];
+        if (!targetPiece || (isCurrentPlayerPiece(board[row][col]) !== isCurrentPlayerPiece(targetPiece))) {
+          moves.push({ row: r, col: c, type: targetPiece ? "capture" : "valid-move" });
+        }
+      }
+    }
+  }
+  return moves;
+}
+
+// Capturing Logic
+// Kings can capture opponent pieces adjacent to them as long as the move does not place the king in check.
+
+// Utility functions for linear moves:
+function getLinearMoves(row, col, directions) {
+  const moves = [];
+  directions.forEach(([dx, dy]) => {
+    let r = row + dx;
+    let c = col + dy;
+    while (r >= 0 && r < 8 && c >= 0 && c < 8) {
+      const targetPiece = board[r][c];
+      if (!targetPiece) {
+        moves.push({ row: r, col: c });
+      } else {
+        if (isCurrentPlayerPiece(board[row][col]) !== isCurrentPlayerPiece(targetPiece)) {
+          moves.push({ row: r, col: c, type: "capture" });
+        }
+        break;
+      }
+      r += dx;
+      c += dy;
+    }
+  });
+  return moves;
+}
+
+          if (isCheckmate(currentPlayer)) {
+            statusElement.textContent = `${currentPlayer === "white" ? "Black" : "White"} wins by checkmate!`;
+            console.log("Checkmate detected.");
+          } else if (isStalemate(currentPlayer)) {
+            statusElement.textContent = "Stalemate!";
+            console.log("Stalemate detected.");
+          } else if (isKingInCheck(currentPlayer)) {
+            statusElement.textContent = `Check! ${currentPlayer.charAt(0).toUpperCase() + currentPlayer.slice(1)}'s turn.`;
+            console.log("King is in check.");
+          } else {
+            statusElement.textContent = `${currentPlayer.charAt(0).toUpperCase() + currentPlayer.slice(1)}'s turn.`;
+          }
           clearSelection();
         } else {
           console.log("Invalid move attempted.");
           statusElement.textContent = `Invalid move. It's still ${currentPlayer}'s turn.`;
         }
       } else if (piece) {
+        console.log(`Selected piece: ${piece}.`);
         selectPiece(row, col);
       }
     }
@@ -187,6 +310,7 @@
 
     function highlightValidMoves(row, col) {
       const moves = getValidMoves(row, col);
+      console.log(`Valid moves for ${board[row][col]}:`, moves);
       moves.forEach(({ row, col, type }) => {
         const square = boardElement.children[row * 8 + col];
         square.classList.add(type === "capture" ? "capture" : "valid-move");
@@ -198,8 +322,16 @@
       const targetMove = validMoves.find((move) => move.row === row && move.col === col);
 
       if (targetMove) {
+        const originalPiece = board[row][col];
         board[selectedPosition.row][selectedPosition.col] = "";
         board[row][col] = selectedPiece;
+
+        if (isKingInCheck(currentPlayer)) {
+          console.log("Move puts king in check. Reverting.");
+          board[selectedPosition.row][selectedPosition.col] = selectedPiece;
+          board[row][col] = originalPiece;
+          return false;
+        }
         return true;
       }
       return false;
@@ -211,14 +343,18 @@
 
       if (!piece) return moves;
 
-      if (piece === PIECES.WHITE_PAWN || piece === PIECES.BLACK_PAWN) {
-        moves.push(...getPawnMoves(row, col, piece === PIECES.WHITE_PAWN));
+      if (piece === PIECES.WHITE_PAWN) {
+        moves.push(...getPawnMoves(row, col, true));
+      } else if (piece === PIECES.BLACK_PAWN) {
+        moves.push(...getPawnMoves(row, col, false));
+      } else if (piece === PIECES.WHITE_KNIGHT || piece === PIECES.BLACK_KNIGHT) {
+        moves.push(...getKnightMoves(row, col));
       } else if (piece === PIECES.WHITE_ROOK || piece === PIECES.BLACK_ROOK) {
-        moves.push(...getLinearMoves(row, col, [[1, 0], [-1, 0], [0, 1], [0, -1]]));
+        moves.push(...getRookMoves(row, col));
       } else if (piece === PIECES.WHITE_BISHOP || piece === PIECES.BLACK_BISHOP) {
-        moves.push(...getLinearMoves(row, col, [[1, 1], [1, -1], [-1, 1], [-1, -1]]));
+        moves.push(...getBishopMoves(row, col));
       } else if (piece === PIECES.WHITE_QUEEN || piece === PIECES.BLACK_QUEEN) {
-        moves.push(...getLinearMoves(row, col, [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]));
+        moves.push(...getQueenMoves(row, col));
       } else if (piece === PIECES.WHITE_KING || piece === PIECES.BLACK_KING) {
         moves.push(...getKingMoves(row, col));
       }
@@ -226,7 +362,168 @@
       return moves;
     }
 
+    // Pawn logic:
+    function getPawnMoves(row, col, isWhite) {
+      const moves = [];
+      const direction = isWhite ? -1 : 1;
+      const startRow = isWhite ? 6 : 1;
+
+      if (board[row + direction]?.[col] === "") moves.push({ row: row + direction, col });
+      if (row === startRow && board[row + 2 * direction]?.[col] === "" && board[row + direction]?.[col] === "") {
+        moves.push({ row: row + 2 * direction, col });
+      }
+
+      [-1, 1].forEach((offset) => {
+        const target = board[row + direction]?.[col + offset];
+        if (target && ((isWhite && target === target.toLowerCase()) || (!isWhite && target === target.toUpperCase()))) {
+          moves.push({ row: row + direction, col: col + offset, type: "capture" });
+        }
+      });
+
+      return moves;
+    }
+
+    // Knight logic:
+    function getKnightMoves(row, col) {
+      const moves = [];
+      [
+        [2, 1], [2, -1], [-2, 1], [-2, -1],
+        [1, 2], [1, -2], [-1, 2], [-1, -2],
+      ].forEach(([dx, dy]) => {
+        const targetRow = row + dx;
+        const targetCol = col + dy;
+        if (targetRow >= 0 && targetRow < 8 && targetCol >= 0 && targetCol < 8) {
+          const targetPiece = board[targetRow][targetCol];
+          if (!targetPiece || (isCurrentPlayerPiece(board[row][col]) !== isCurrentPlayerPiece(targetPiece))) {
+            moves.push({ row: targetRow, col: targetCol, type: targetPiece ? "capture" : "valid-move" });
+          }
+        }
+      });
+      return moves;
+    }
+
+    // Rook logic:
+    function getRookMoves(row, col) {
+      return getLinearMoves(row, col, [[1, 0], [-1, 0], [0, 1], [0, -1]]);
+    }
+
+    // Bishop logic:
+    function getBishopMoves(row, col) {
+      return getLinearMoves(row, col, [[1, 1], [1, -1], [-1, 1], [-1, -1]]);
+    }
+
+    // Queen logic:
+    function getQueenMoves(row, col) {
+      return getLinearMoves(row, col, [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]);
+    }
+
+    // King logic:
+    function getKingMoves(row, col) {
+      const moves = [];
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+          if (dx === 0 && dy === 0) continue;
+          const r = row + dx;
+          const c = col + dy;
+          if (r >= 0 && r < 8 && c >= 0 && c < 8) {
+            const targetPiece = board[r][c];
+            if (!targetPiece || (isCurrentPlayerPiece(board[row][col]) !== isCurrentPlayerPiece(targetPiece))) {
+              moves.push({ row: r, col: c, type: targetPiece ? "capture" : "valid-move" });
+            }
+          }
+        }
+      }
+      return moves;
+    }
+
+    function getLinearMoves(row, col, directions) {
+      const moves = [];
+      directions.forEach(([dx, dy]) => {
+        let r = row + dx;
+        let c = col + dy;
+        while (r >= 0 && r < 8 && c >= 0 && c < 8) {
+          const targetPiece = board[r][c];
+          if (!targetPiece) {
+            moves.push({ row: r, col: c });
+          } else {
+            if (isCurrentPlayerPiece(board[row][col]) !== isCurrentPlayerPiece(targetPiece)) {
+              moves.push({ row: r, col: c, type: "capture" });
+            }
+            break;
+          }
+          r += dx;
+          c += dy;
+        }
+      });
+      return moves;
+    }
+
+    function clearSelection() {
+      selectedPiece = null;
+      selectedPosition = null;
+      document.querySelectorAll(".square").forEach((square) => square.classList.remove("selected", "valid-move", "capture"));
+    }
+
+    function isKingInCheck(playerColor) {
+      let kingPosition = null;
+      for (let row = 0; row < 8; row++) {
+        for (let col = 0; col < 8; col++) {
+          const piece = board[row][col];
+          if ((playerColor === "white" && piece === PIECES.WHITE_KING) ||
+              (playerColor === "black" && piece === PIECES.BLACK_KING)) {
+            kingPosition = { row, col };
+            break;
+          }
+        }
+      }
+
+      for (let row = 0; row < 8; row++) {
+        for (let col = 0; col < 8; col++) {
+          const piece = board[row][col];
+          if (piece && isCurrentPlayerPiece(piece) !== (playerColor === "white")) {
+            const validMoves = getValidMoves(row, col);
+            if (validMoves.some(move => move.row === kingPosition.row && move.col === kingPosition.col)) {
+              return true;
+            }
+          }
+        }
+      }
+      return false;
+    }
+
+    function getAllLegalMoves(playerColor) {
+      const legalMoves = [];
+      for (let row = 0; row < 8; row++) {
+        for (let col = 0; col < 8; col++) {
+          const piece = board[row][col];
+          if (piece && isCurrentPlayerPiece(piece) === (playerColor === "white")) {
+            const validMoves = getValidMoves(row, col);
+            validMoves.forEach(move => {
+              const originalPiece = board[move.row][move.col];
+              board[row][col] = "";
+              board[move.row][move.col] = piece;
+              if (!isKingInCheck(playerColor)) {
+                legalMoves.push({ from: { row, col }, to: { row: move.row, col: move.col } });
+              }
+              board[row][col] = piece;
+              board[move.row][move.col] = originalPiece;
+            });
+          }
+        }
+      }
+      return legalMoves;
+    }
+
+    function isCheckmate(playerColor) {
+      return isKingInCheck(playerColor) && getAllLegalMoves(playerColor).length === 0;
+    }
+
+    function isStalemate(playerColor) {
+      return !isKingInCheck(playerColor) && getAllLegalMoves(playerColor).length === 0;
+    }
+
     createBoard();
+    console.log("Chess game initialized and ready.");
   </script>
 </body>
 
